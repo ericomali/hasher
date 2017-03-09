@@ -1,0 +1,126 @@
+#!/usr/bin/ruby
+#
+# LICENSE
+# Copyright 2017 Eric Melville
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# DESCRIPTION
+# hasher - quick tool to obviate silly platform differences when hashing data
+#
+# Using file checksums across different systems can be a pain due to trivial
+# name and argument differences. This is intended to be a single tool that,
+# given an algorithm name, hunts out the proper tool and takes care of the
+# details.
+#
+# HISTORY
+# 0.1 - Initial version, scan paths and send appropriate command to sub shell
+#
+# TODO
+# Reformat output into a unified format
+# Handle stdin
+
+require 'set'
+
+tools = { 'md5' => 'md5',
+          'md5sum' => 'md5',
+          'fciv -md5' => 'md5',
+          'certutil -hashfile POSTFIX' => 'md5',
+          'shasum -a 1' => 'sha1',
+          'sha1sum' => 'sha1',
+          'fciv -sha1' => 'sha1',
+          'certutil -hashfile POSTFIX' => 'sha1',
+          'shasum -a 256' => 'sha256',
+          'certutil -hashfile POSTFIX' => 'sha256',
+          'shasum -a 512' => 'sha512',
+          'sum' => 'sum',
+          'cksum' => 'cksum',
+        }
+
+if ARGV.length < 2 then
+    print "usage: hasher HASH file [additional files]\n"
+    exit(1)
+end
+
+# check requested algorithm against know, also build list of potential tools
+alist = Set.new
+tlist = Set.new
+algo = ARGV[0]
+tools.each do |tool, name|
+    alist.add(name)
+    if name == algo then
+        tlist.add(tool)
+    end
+end
+
+# abort on unknown algorithm
+if not alist.include?(algo) then
+    print "unknown algorithm, should be one of -\n"
+    alist.each do |a|
+        print "  " + a + "\n"
+    end
+    exit(1)
+end
+
+# search system execution path for any of the known tools
+backend = ""
+pathstr = ENV['PATH']
+# gross
+win = /mswin|msys|mingw|cygwin|bccwin|wince|emc/.match(RbConfig::CONFIG['host_os'])
+pathcomps = nil
+if win == nil then
+    pathcomps = pathstr.split(':')
+else
+    pathcomps = pathstr.split(';')
+end
+pathcomps.each do |path|
+    tlist.each do |tool|
+        toolcomps = tool.split(" ")
+        base = toolcomps[0]
+        pot = path + "/" + base
+        if File.exist?(pot) then
+            backend = path + "/" + tool
+        end
+    end
+end
+if backend == "" then
+    print "no tool found for " + algo + "\n"
+    exit
+end
+
+# set up to swap placeholder string for algorithm postfix if needed
+postfix = 0
+if backend["POSTFIX"] then
+    postfix = 1
+    backend.gsub!(" POSTFIX", "")
+end
+
+# bundle up the rest of the arguments and send them off to the found tool
+args = ARGV
+args.delete_at(0)
+files = args.join(" ")
+backend = backend + " " + files
+if postfix == 1 then
+    backend = backend + " " + algo
+end
+system(backend)
