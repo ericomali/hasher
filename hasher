@@ -1,4 +1,4 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 #
 # LICENSE
 # Copyright 2017 Eric Melville
